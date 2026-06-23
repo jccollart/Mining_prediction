@@ -1,0 +1,68 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scykit_learn.linear_model import LinearRegression
+from scykit_learn.ensemble import RandomForestRegressor
+from scykit_learn.preprocessing import StandardScaler, RobustScaler
+from scykit_learn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay, RocCurveDisplay
+from scykit_learn.tree import DecisionTreeRegressor 
+from sklearn.svm import SVR
+
+# Load the dataset
+path='C:\\Users\\colla\\Coding\\jcvenv\\TripleTen\\Sprint13'
+df_train = pd.read_csv(path + '\\gold_recovery_train.csv')
+df_test = pd.read_csv(path + '\\gold_recovery_test.csv')
+df_full= pd.read_csv(path + '\\gold_recovery_full.csv')
+# Display the first few rows of the training dataset
+print(df_train.head())
+# Check for missing values
+print(df_train.isnull().sum())
+# Check the data types of the columns
+print(df_train.dtypes)
+# Summary statistics of the dataset
+print(df_train.describe())
+# Check for duplicates
+print(df_train.duplicated().sum())
+# Check for outliers using boxplots
+plt.figure(figsize=(10, 6))
+sns.boxplot(data=df_train)
+plt.title('Boxplot of Training Data')
+plt.xticks(rotation=45)
+plt.show()
+# Check for outliers using histograms
+df_train.hist(figsize=(12, 10))
+plt.suptitle('Histograms of Training Data')
+plt.show()
+# Check for outliers using scatter plots
+sns.pairplot(df_train)
+plt.suptitle('Pairplot of Training Data')
+plt.show()
+# Check for outliers using z-score
+from scipy import stats
+z_scores = np.abs(stats.zscore(df_train.select_dtypes(include=[np.number])))
+outliers = (z_scores > 3).any(axis=1)
+print(f'Number of outliers detected: {outliers.sum()}')
+# Check for outliers using IQR
+Q1 = df_train.select_dtypes(include=[np.number]).quantile(0.25)
+Q3 = df_train.select_dtypes(include=[np.number]).quantile(0.75)
+IQR = Q3 - Q1
+outliers_iqr = ((df_train.select_dtypes(include=[np.number]) < (Q1 - 1.5 * IQR)) | (df_train.select_dtypes(include=[np.number]) > (Q3 + 1.5 * IQR))).any(axis=1)
+print(f'Number of outliers detected using IQR: {outliers_iqr.sum()}')
+#preprocess data
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+#train models
+X_train = df_train.drop('gold_recovery', axis=1)
+y_train = df_train['gold_recovery']
+X_test = df_test.drop('gold_recovery', axis=1)
+y_test = df_test['gold_recovery']
+# Linear Regression
+lr = LinearRegression()
+lr.fit(X_train, y_train)
+y_pred_lr = lr.predict(X_test)
+# Random Forest Regressor
+rf = RandomForestRegressor(n_estimators=100, random_state=42)
+rf.fit(X_train, y_train)

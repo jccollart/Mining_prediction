@@ -2,67 +2,356 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from scykit_learn.linear_model import LinearRegression
-from scykit_learn.ensemble import RandomForestRegressor
-from scykit_learn.preprocessing import StandardScaler, RobustScaler
-from scykit_learn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay, RocCurveDisplay
-from scykit_learn.tree import DecisionTreeRegressor 
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.tree import DecisionTreeRegressor 
 from sklearn.svm import SVR
 
-# Load the dataset
-path='C:\\Users\\colla\\Coding\\jcvenv\\TripleTen\\Sprint13'
-df_train = pd.read_csv(path + '\\gold_recovery_train.csv')
-df_test = pd.read_csv(path + '\\gold_recovery_test.csv')
-df_full= pd.read_csv(path + '\\gold_recovery_full.csv')
-# Display the first few rows of the training dataset
-print(df_train.head())
-# Check for missing values
-print(df_train.isnull().sum())
-# Check the data types of the columns
-print(df_train.dtypes)
-# Summary statistics of the dataset
-print(df_train.describe())
-# Check for duplicates
-print(df_train.duplicated().sum())
-# Check for outliers using boxplots
-plt.figure(figsize=(10, 6))
-sns.boxplot(data=df_train)
-plt.title('Boxplot of Training Data')
-plt.xticks(rotation=45)
-plt.show()
-# Check for outliers using histograms
-df_train.hist(figsize=(12, 10))
-plt.suptitle('Histograms of Training Data')
-plt.show()
-# Check for outliers using scatter plots
-sns.pairplot(df_train)
-plt.suptitle('Pairplot of Training Data')
-plt.show()
-# Check for outliers using z-score
-from scipy import stats
-z_scores = np.abs(stats.zscore(df_train.select_dtypes(include=[np.number])))
-outliers = (z_scores > 3).any(axis=1)
-print(f'Number of outliers detected: {outliers.sum()}')
-# Check for outliers using IQR
-Q1 = df_train.select_dtypes(include=[np.number]).quantile(0.25)
-Q3 = df_train.select_dtypes(include=[np.number]).quantile(0.75)
-IQR = Q3 - Q1
-outliers_iqr = ((df_train.select_dtypes(include=[np.number]) < (Q1 - 1.5 * IQR)) | (df_train.select_dtypes(include=[np.number]) > (Q3 + 1.5 * IQR))).any(axis=1)
-print(f'Number of outliers detected using IQR: {outliers_iqr.sum()}')
-#preprocess data
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
 
-#train models
-X_train = df_train.drop('gold_recovery', axis=1)
-y_train = df_train['gold_recovery']
-X_test = df_test.drop('gold_recovery', axis=1)
-y_test = df_test['gold_recovery']
-# Linear Regression
-lr = LinearRegression()
-lr.fit(X_train, y_train)
-y_pred_lr = lr.predict(X_test)
-# Random Forest Regressor
-rf = RandomForestRegressor(n_estimators=100, random_state=42)
-rf.fit(X_train, y_train)
+
+# %%
+
+df_train=pd.read_csv('/datasets/gold_recovery_train.csv')
+df_test=pd.read_csv('/datasets/gold_recovery_test.csv')
+df_full=pd.read_csv('/datasets/gold_recovery_full.csv')
+
+
+
+dfs_original = {
+    'train': df_train.copy(),
+    'test': df_test.copy(),
+    'full': df_full.copy()
+}
+
+#pasare a datetime de una vez por que tuve problemas despues.
+df_train['date']=pd.to_datetime(df_train['date'])
+df_test['date']=pd.to_datetime(df_test['date'])
+df_full['date']=pd.to_datetime(df_full['date'])
+
+df_train_original=df_train.set_index('date')
+df_test_original=df_test.set_index('date')
+df_full_original=df_full.set_index('date')
+
+#Quiero poder mantener copia de originales para poder comparar despues.
+
+# %%
+df_full_original.columns
+
+# %% [markdown]
+# ## Proceso de programa:
+# 
+# Clean(Nulos, duplicados, comparar columnas de los df's)
+# 
+# Preprocess: Scale data, sns.pearplot, dataleaks, multicolinearidad, outliers, 
+# 
+# Choose model: Test standard models to see which gives better result
+
+# %%
+print('Cols train:',len(df_train.columns))
+print()
+print('Cols test:',len(df_test.columns))
+print()
+
+print('Cols full:',len(df_full.columns))
+
+cols_to_drop = df_train.columns.difference(df_test.columns)
+print('\nColumns to drop from df_train:',len(cols_to_drop))
+
+# %%
+df_test.columns
+
+# %%
+#pasar a diccionario para poder usar for a todos los df en conjunto y poder ver su nombre.
+dfs = {'train': df_train, 'test': df_test, 'full': df_full}
+
+# %%
+for name, df in dfs.items():
+    df['date']=pd.to_datetime(df['date'])
+    df=df.set_index('date')
+    dfs[name] = df
+#Hacer columna 'date' el index.
+df_train.columns
+
+# %%
+
+print('NaN antes de interpolate:\n')
+for name, df in dfs.items():
+    dfs[name] = df
+    print(f'-----{name}------')
+    print('Duplicados:',df.duplicated().sum())
+    print(df.isna().sum().sum())
+    
+print('\n')
+
+print('NaN despues de interpolate:\n')
+
+for name, df in dfs.items():
+    df=df.interpolate(method='time',limit=7,limit_direction='both')
+    dfs[name] = df
+    print(f'-----{name}------')
+    print('Duplicados:',df.duplicated().sum())
+    print(df.isna().sum().sum())
+
+#revisamos si hay duplicados y interpolamos los datos que tienen menos de 6 datos consecutivos.
+
+
+# %% [markdown]
+# No quedan duplicados. :)
+# 
+# Se logro bajar los Nan significativamente con interpolate lo cual permite mantener mayor informacion en el training set.
+# Aun faltan muchos Nan por solucionar. Veremos como estan distribuidos para asi lograr tener una mejor idea de como manejarlos.
+
+# %%
+for name, df in dfs.items():
+    print(f'----------{name}--------')
+    nul_percent=df.isna().sum()/len(df)
+    print('Nul min:',nul_percent.min(),'\n','Nul mean:',nul_percent.mean(),'\n','Nul max:',nul_percent.max())
+    print(nul_percent.sort_values(ascending=False))
+
+# %% [markdown]
+# Ahora podemos ver que la mayoria de las columnas tienen un % bajo de NaN. Estas con un bajo % las podemos eliminar ya que se relleno lo que se pudo con datos sinteticos pero tampoco se puede inventar demasiadas horas consecutivas de datos.
+
+# %% [markdown]
+# Despues de eliminar columnas innecesarias y interpolar datos vemos que hay varias columnas con menos de 5% de Nan.
+# Se eliminaran los datos cuando tengan menos de 5% de valores NaN ya que se logra mantener la gran mayoria de los datos para entrenamiento.
+# Al final veremos que tiene NaN todavia.
+
+# %%
+small_nan_cols=[]
+limit_drop=0.09
+for name,df in dfs.items():
+    nan_ratio = df.isna().mean()
+    small_nan_cols = nan_ratio[nan_ratio < limit_drop].index
+    df=df.dropna(subset=small_nan_cols)
+    dfs[name] = df
+    print(f'-----{name}----')
+    print(df.isna().sum().sum())
+    print()
+    print('NaN %:\n',df.isna().mean().sort_values(ascending=False))
+
+# %% [markdown]
+# ## POR FIN!! Ya quedamos con datos listos.
+# Queda con 52 columnas en vez de 53 por que la de date ahora es index.
+# Ahora vamos con los modelos de ML.
+# 
+# Hay demasiadas columnas, entonces veremos si podemos juntar varias en columnas agregadas para hacer mas eficiente el modelo.
+# Primero entrenaremos unos cuantos modelos con hiperparametros estandar para ver cual de ellos funciona mejor en df_train.
+# Despues veremos que columnas se pueden join para tener menos columnas y se hara la misma prueba con el df_train_agg.
+# Se comparan ambos y se escoge la mejor opcion entre los dos.
+# Una vez se tiene el model_x se empieza a probar mejoras con hiperparametros(for loops con .fit, sk.metrics)
+# Se escoje los mejores hiperparametros.
+
+# %%
+df_train1=dfs['train']
+df_test1=dfs['test']
+df_full1=dfs['full']
+
+print(df_train1.index.dtype)
+print(df_test1.index.dtype)
+print(df_full1.index.dtype)
+
+print(df_train1.isna().sum().sum())
+print(df_test1.isna().sum().sum())
+print(df_full1.isna().sum().sum())
+#Veo que hay que sacar el target column de df_full
+
+# %%
+train_target = df_train1['rougher.output.recovery']
+train_target_final = df_train1['final.output.recovery']
+train_features=df_train1.drop(cols_to_drop,axis=1)
+
+print(len(train_features.columns))
+print(train_target.isna().sum().sum())
+print(train_target.head(3))
+print('\n')
+print(len(train_features.columns))
+print(train_target_final.isna().sum().sum())
+print(train_target_final.head(3))
+
+# %% [markdown]
+# #Test set does not contain the target and I need it to check how my model is working.
+
+# %%
+print('Test target: rougher.output.recovery\n')
+test_target = df_full1['rougher.output.recovery'].reindex(df_test1.index)
+test_target = test_target.dropna()
+print(test_target.isna().sum())
+print('test target length:',len(test_target))
+print('test features length:',len(df_test1))
+print('\n')
+#Test target for final output
+print('Test target: final.output.recovery\n')
+test_target_final = df_full1['final.output.recovery'].reindex(df_test1.index)
+test_target_final = test_target_final.dropna()
+print(test_target_final.isna().sum())
+print('test target length:',len(test_target_final))
+print('test features length:',len(df_test1))
+
+# %%
+test_features = df_test1.loc[test_target.index]
+print('test target length:',len(test_target))
+print('test features length:',len(test_features))
+print('Test features NaN:',test_target.isna().sum().sum())
+
+# %% [markdown]
+# ## Listo para empezar a escalar datos
+
+# %%
+print(train_features.isna().sum().sum())
+
+# %%
+
+# Resetear el índice para escalado
+train_features_reset = train_features.reset_index(drop=True)
+test_features_reset = test_features.reset_index(drop=True)
+
+# Ahora escalar
+scaler = StandardScaler()
+train_scaled = scaler.fit_transform(train_features_reset)
+test_scaled = scaler.transform(test_features_reset)
+
+# Convertir de vuelta a DataFrame con el índice original
+train_scaled = pd.DataFrame(train_scaled, columns=train_features.columns)
+test_scaled = pd.DataFrame(test_scaled, columns=test_features.columns)
+
+
+# %%
+test_scaled = test_scaled.squeeze()
+train_scaled = train_scaled.squeeze()
+
+# %% [markdown]
+# ## Revision final antes de hacer el model.fit
+
+# %%
+print('train_target')
+print('type:',type(train_target))
+print('NaN:',train_target.isna().sum())
+print('Shape:',train_target.shape,'\n')
+
+print('train_features')
+print('type:',type(train_scaled))
+print('NaN:',train_scaled.isna().sum().sum())
+print('Shape:',train_scaled.shape,'\n')
+
+print('test_target')
+print('type:',type(test_target))
+print('NaN:',test_target.isna().sum().sum())
+print('Shape:',test_target.shape)
+
+print('test_features')
+print('type:',type(test_scaled))
+print('NaN:',test_scaled.isna().sum().sum())
+print('Shape:',test_scaled.shape)
+
+# %%
+
+model_lr=LinearRegression()
+model_rfr=RandomForestRegressor(
+    n_estimators=300,
+    max_depth=10,
+    min_samples_split=5,
+    min_samples_leaf=3,
+    max_features='sqrt',
+    random_state=42,
+    n_jobs=-1
+)
+
+
+# %% [markdown]
+# ## Linear Regressor Model
+
+# %%
+
+model_lr.fit(train_scaled, train_target)
+
+pred_lr = model_lr.predict(test_scaled)
+
+rmse_lr = mean_squared_error(test_target, pred_lr, squared=False)
+
+print("RMSE:", rmse_lr)
+
+
+# %% [markdown]
+# ## Random Forest Regressor Model
+
+# %%
+model_rfr.fit(train_scaled, train_target)
+
+pred_rfr_rougher = model_rfr.predict(test_scaled)
+
+rmse_rfr_rougher = mean_squared_error(test_target, pred_rfr_rougher, squared=False)
+EAM_rougher=mean_absolute_error(test_target, pred_rfr_rougher)
+
+print('Rougher output:')
+print("RMSE:", rmse_rfr_rougher,'\n')
+print("EAM rougher:", EAM_rougher,'\n')
+
+
+
+# %% [markdown]
+# # Como podemos ver el Random Forest Regressor hizo una mejor labor de prediccion.
+# ## Ahora vamos a programar la formula sMAPE
+
+# %%
+def smape(y_true, y_pred):
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    
+    denominator = (np.abs(y_true) + np.abs(y_pred)) / 2
+    
+    # avoid division by zero
+    denominator[denominator == 0] = 1
+    
+    return np.mean(np.abs(y_true - y_pred) / denominator) * 100
+
+# %% [markdown]
+# ## Tenemos que hacer un predict para el final output recovery
+
+# %%
+#usaremos el Random Forest Regressor ya que nos dio mejor resultado anteriormente con rougher.output.recovery
+model_rfr_final=RandomForestRegressor(
+    n_estimators=300,
+    max_depth=10,
+    min_samples_split=5,
+    min_samples_leaf=3,
+    max_features='sqrt',
+    random_state=42,
+    n_jobs=-1
+)
+model_rfr_final.fit(train_scaled, train_target_final)
+
+pred_rfr_final = model_rfr_final.predict(test_scaled)
+
+rmse_rfr_final = mean_squared_error(test_target_final, pred_rfr_final, squared=False)
+EAM_final=mean_absolute_error(test_target_final, pred_rfr_final)
+
+print('Final output:')
+print("RMSE:", rmse_rfr_final,'\n')
+print("EAM final:", EAM_final,'\n')
+
+# %% [markdown]
+# ## Tenemos ya todo para calcular sMAPE
+
+# %%
+#ahora vamos con sMAPE
+smape__rougher = smape(test_target, pred_rfr_rougher)
+smape__final = smape(test_target_final, pred_rfr_final)
+print('sMAPE rougher:', smape__rougher)
+print('sMAPE final:', smape__final,'\n')
+#sMAPE final result:
+smape_final_result = 0.25*smape__rougher + 0.75*smape__final
+print('Respuesta final de sMAPE:',smape_final_result)
+
+# %%
+#vamos calcular el promedio, minimo, y maximo de los valores target para ver que tanto es el error que tenemos.
+print('Rougher output recovery stats:')
+print(test_target.describe())
+print('\n')
+print('Final output recovery stats:')
+print(test_target_final.describe())
+
+
+# %% [markdown]
+# ## Como podemos observar se ha logrado tener un resultado bastante favorable para la prediccion. Tenemos menos de 1 desviacion estandar de la muestra y nos brinda una buena idea de cual sera el resultado de un lote en produccion.
